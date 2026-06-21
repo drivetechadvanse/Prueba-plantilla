@@ -30,14 +30,15 @@
         import { getFirestore, doc, setDoc, collection, onSnapshot, deleteDoc, query } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
         
         const firebaseConfig = {
-  apiKey: "AIzaSyDOK0wHv1gV5_wB4OSbYjDcL9lmLEg_Rdo",
-  authDomain: "drivemx-paqueteria.firebaseapp.com",
-  projectId: "drivemx-paqueteria",
-  storageBucket: "drivemx-paqueteria.firebasestorage.app",
-  messagingSenderId: "486434579543",
-  appId: "1:486434579543:web:8fe53f54b1446644236f12",
-  measurementId: "G-QDWX6CHWRM"
-};
+          apiKey: "AIzaSyDOK0wHv1gV5_wB4OSbYjDcL9lmLEg_Rdo",
+          authDomain: "drivemx-paqueteria.firebaseapp.com",
+          projectId: "drivemx-paqueteria",
+          storageBucket: "drivemx-paqueteria.firebasestorage.app",
+          messagingSenderId: "486434579543",
+          appId: "1:486434579543:web:8fe53f54b1446644236f12",
+          measurementId: "G-QDWX6CHWRM"
+        };
+        
         window.firebaseConfig = firebaseConfig;
         // Exponemos las nuevas herramientas para usarlas en React
         window.FirebaseSDK = { 
@@ -139,32 +140,30 @@
                 }
                 const db = fbase.getFirestore();
                 await fbase.deleteDoc(fbase.doc(db, 'artifacts', appId, 'public', 'data', 'operators', email));
-                // Nota: Por seguridad, el usuario se elimina de la base de datos perdiendo acceso,
-                // pero la cuenta de Authentication se debe borrar desde la consola de Firebase.
             };
 
-            // NUEVO LOGIN DE FIREBASE
+            // NUEVO LOGIN DE FIREBASE ACTUALIZADO CON MANEJO DE ERRORES
             const handleLogin = async (e) => {
                 e.preventDefault();
                 try {
                     const auth = fbase.getAuth();
-                    await fbase.signInWithEmailAndPassword(auth, loginForm.u, loginForm.p);
+                    const userCredential = await fbase.signInWithEmailAndPassword(auth, loginForm.u, loginForm.p);
+                    console.log("Autenticación exitosa en Firebase para:", userCredential.user.email);
                 } catch(error) {
-                    alert("Error al iniciar sesión. Verifica tu correo y contraseña.");
+                    // Aquí imprimimos el error real en la consola y lo mostramos en la alerta
+                    console.error("Detalle del error de Firebase:", error);
+                    alert(`Error al iniciar sesión.\n\nCódigo: ${error.code}\n\nPor favor, abre la consola (presiona F12 o Clic derecho -> Inspeccionar -> Consola) para ver el motivo exacto.`);
                 }
             };
 
-            // NUEVO LOGOUT
             const handleLogout = async () => {
                 const auth = fbase.getAuth();
                 await fbase.signOut(auth);
                 setView('tracking');
             };
 
-            // CREAR NUEVO OPERADOR EN AUTH Y DB
             const handleAddOp = async (staffForm) => {
                 try {
-                    // Truco: Usar una app secundaria para no cerrar la sesión del admin actual
                     const secApp = fbase.initializeApp(window.firebaseConfig, "OpInit_" + Date.now());
                     const secAuth = fbase.getAuth(secApp);
                     await fbase.createUserWithEmailAndPassword(secAuth, staffForm.u, staffForm.p);
