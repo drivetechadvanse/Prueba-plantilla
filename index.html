@@ -25,7 +25,8 @@
 
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-        import { getAuth, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+        // Importamos las herramientas de Autenticación con Correo y Contraseña
+        import { getAuth, onAuthStateChanged, signInAnonymously, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
         import { getFirestore, doc, setDoc, collection, onSnapshot, deleteDoc, query } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
         
         const firebaseConfig = {
@@ -39,10 +40,14 @@
         };
 
         window.firebaseConfig = firebaseConfig;
-        window.FirebaseSDK = { initializeApp, getAuth, onAuthStateChanged, signInAnonymously, getFirestore, doc, setDoc, collection, onSnapshot, deleteDoc, query };
+        // Exponemos las nuevas herramientas para usarlas en React
+        window.FirebaseSDK = { 
+            initializeApp, getAuth, onAuthStateChanged, signInAnonymously, 
+            signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut,
+            getFirestore, doc, setDoc, collection, onSnapshot, deleteDoc, query 
+        };
     </script>
 
-    <!-- Importación de los componentes modulares separados -->
     <script type="text/babel" data-presets="react" src="./users/OperatorsPanel.js"></script>
     <script type="text/babel" data-presets="react" src="./admin/ControlPanel.js"></script>
 
@@ -68,16 +73,36 @@
             const [searchQuery, setSearchQuery] = useState('');
             const [trackingResult, setTrackingResult] = useState(null);
             const [loginForm, setLoginForm] = useState({ u: '', p: '' });
-            
-            // Nota: Los estados de los formularios modulares (paquetes y usuarios) ya no están aquí.
 
+            // Inicialización y Escucha de Sesión
             useEffect(() => {
                 const app = fbase.initializeApp(window.firebaseConfig);
                 const auth = fbase.getAuth(app);
-                fbase.signInAnonymously(auth);
-                return fbase.onAuthStateChanged(auth, setFbUser);
+                
+                return fbase.onAuthStateChanged(auth, (user) => {
+                    setFbUser(user);
+                    if (!user) {
+                        // Si nadie está conectado, entramos anónimos para usar el rastreo
+                        fbase.signInAnonymously(auth);
+                        setSessionUser(null);
+                    }
+                });
             }, []);
 
+            // Vincular el usuario logueado con sus datos de la base de datos (Admin/Operador)
+            useEffect(() => {
+                if (fbUser && !fbUser.isAnonymous && ops.length > 0) {
+                    const staffData = ops.find(o => o.email === fbUser.email);
+                    if (staffData) {
+                        setSessionUser(staffData);
+                        setView(staffData.role === 'admin' ? 'admin' : 'operator');
+                    }
+                } else if (fbUser && fbUser.isAnonymous) {
+                    setSessionUser(null);
+                }
+            }, [fbUser, ops]);
+
+            // Cargar datos (Paquetes y Operadores)
             useEffect(() => {
                 if (!fbUser) return;
                 const db = fbase.getFirestore();
@@ -91,9 +116,6 @@
 
                 const unsubOps = fbase.onSnapshot(opCol, (s) => {
                     const l = []; s.forEach(d => l.push(d.data()));
-                    if (!l.find(x => x.id === 'admin central')) {
-                        l.push({ id: 'admin central', pass: 'arturo9271', name: 'Admin Central', role: 'admin' });
-                    }
                     setOps(l);
                 });
 
@@ -110,20 +132,54 @@
                 await fbase.deleteDoc(fbase.doc(db, 'artifacts', appId, 'public', 'data', 'packages', id));
             };
 
-            const deleteOp = async (id) => {
-                if(id === 'admin central') return; 
+            const deleteOp = async (email) => {
+                const opToDelete = ops.find(o => o.email === email);
+                if(opToDelete && opToDelete.role === 'admin') {
+                    alert("No se puede eliminar a un administrador por seguridad.");
+                    return; 
+                }
                 const db = fbase.getFirestore();
-                await fbase.deleteDoc(fbase.doc(db, 'artifacts', appId, 'public', 'data', 'operators', id));
+                await fbase.deleteDoc(fbase.doc(db, 'artifacts', appId, 'public', 'data', 'operators', email));
+                // Nota: Por seguridad, el usuario se elimina de la base de datos perdiendo acceso,
+                // pero la cuenta de Authentication se debe borrar desde la consola de Firebase.
             };
 
-            const handleLogin = (e) => {
+            // NUEVO LOGIN DE FIREBASE
+            const handleLogin = async (e) => {
                 e.preventDefault();
-                const match = ops.find(o => o.id.toLowerCase() === loginForm.u.toLowerCase() && String(o.pass) === String(loginForm.p));
-                if (match) { 
-                    setSessionUser(match); 
-                    setView(match.role === 'admin' ? 'admin' : 'operator'); 
-                } else { 
-                    alert("Credenciales incorrectas."); 
+                try {
+                    const auth = fbase.getAuth();
+                    await fbase.signInWithEmailAndPassword(auth, loginForm.u, loginForm.p);
+                } catch(error) {
+                    alert("Error al iniciar sesión. Verifica tu correo y contraseña.");
+                }
+            };
+
+            // NUEVO LOGOUT
+            const handleLogout = async () => {
+                const auth = fbase.getAuth();
+                await fbase.signOut(auth);
+                setView('tracking');
+            };
+
+            // CREAR NUEVO OPERADOR EN AUTH Y DB
+            const handleAddOp = async (staffForm) => {
+                try {
+                    // Truco: Usar una app secundaria para no cerrar la sesión del admin actual
+                    const secApp = fbase.initializeApp(window.firebaseConfig, "OpInit_" + Date.now());
+                    const secAuth = fbase.getAuth(secApp);
+                    await fbase.createUserWithEmailAndPassword(secAuth, staffForm.u, staffForm.p);
+                    await fbase.signOut(secAuth);
+                    
+                    const newOp = { 
+                        id: staffForm.u, 
+                        email: staffForm.u, 
+                        role: 'operador', 
+                        name: staffForm.n 
+                    };
+                    await saveDoc('operators', newOp.id, newOp);
+                } catch(error) {
+                    alert("Error al registrar: " + error.message);
                 }
             };
 
@@ -142,7 +198,7 @@
                                     <p className="text-[10px] font-bold leading-none">{sessionUser.name}</p>
                                     <p className="text-[8px] font-black text-red-500 uppercase">{sessionUser.role}</p>
                                 </div>
-                                <button onClick={() => {setSessionUser(null); setView('tracking');}} className="p-2 text-slate-400"><Icons.LogOut /></button>
+                                <button onClick={handleLogout} className="p-2 text-slate-400 hover:text-red-500"><Icons.LogOut /></button>
                             </div>
                         ) : (
                             <button onClick={() => setView('login')} className="text-[9px] font-black uppercase text-slate-400 tracking-widest">Acceso Staff</button>
@@ -198,7 +254,6 @@
                             </div>
                         )}
 
-                        {/* Renderizamos el panel modular de Control */}
                         {view === 'admin' && window.ControlPanel && (
                             <window.ControlPanel 
                                 pkgs={pkgs} 
@@ -206,6 +261,7 @@
                                 saveDoc={saveDoc} 
                                 deletePkg={deletePkg} 
                                 deleteOp={deleteOp} 
+                                handleAddOp={handleAddOp} 
                                 Icons={Icons} 
                             />
                         )}
@@ -214,7 +270,7 @@
                             <div className="w-full max-w-xl space-y-8 animate-slide">
                                 <div><h1 className="text-3xl font-black uppercase tracking-tight">Mis <span className="text-red-500">Asignaciones</span></h1><p className="text-[10px] font-bold text-slate-400 uppercase">Ruta Activa</p></div>
                                 <div className="space-y-4">
-                                    {pkgs.filter(p => p.op === sessionUser.id).map(p => (
+                                    {pkgs.filter(p => p.op === sessionUser.email).map(p => (
                                         <div key={p.id} className="card-glass p-6 space-y-6">
                                             <div className="flex justify-between items-center"><h3 className="text-xl font-black text-red-600">#{p.id}</h3><span className="text-[9px] font-black uppercase text-slate-400">{p.o} → {p.d}</span></div>
                                             <div className="grid grid-cols-2 gap-2">
@@ -233,7 +289,7 @@
                                 <div className="card-glass p-10 space-y-8">
                                     <h2 className="text-center text-xl font-black uppercase tracking-widest">Panel Staff</h2>
                                     <form onSubmit={handleLogin} className="space-y-4">
-                                        <input required className="input-field" placeholder="USUARIO" onChange={e => setLoginForm({...loginForm, u: e.target.value})} />
+                                        <input required type="email" className="input-field" placeholder="CORREO ELECTRÓNICO" onChange={e => setLoginForm({...loginForm, u: e.target.value})} />
                                         <input required type="password" className="input-field" placeholder="CONTRASEÑA" onChange={e => setLoginForm({...loginForm, p: e.target.value})} />
                                         <button type="submit" className="w-full btn-primary h-12">Entrar</button>
                                     </form>
