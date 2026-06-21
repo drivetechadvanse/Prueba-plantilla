@@ -1,8 +1,6 @@
-// Este componente agrupa toda la vista de Administración Central (Nuevo Envío y Envíos Activos)
 window.ControlPanel = function(props) {
-    const { pkgs, ops, saveDoc, deletePkg, deleteOp, Icons } = props;
+    const { pkgs, ops, saveDoc, deletePkg, deleteOp, handleAddOp, Icons } = props;
     
-    // Estado local para el formulario de nuevo paquete
     const [pkgForm, setPkgForm] = React.useState({ id: '', o: '', d: '', op: '' });
 
     const handleCreatePkg = (e) => {
@@ -14,7 +12,7 @@ window.ControlPanel = function(props) {
             currentStep: 0 
         }; 
         saveDoc('packages', newPkg.id, newPkg); 
-        setPkgForm({ id: '', o: '', d: '', op: '' }); // Limpiar formulario
+        setPkgForm({ id: '', o: '', d: '', op: '' }); 
     };
 
     return (
@@ -27,7 +25,6 @@ window.ControlPanel = function(props) {
             </div>
             
             <div className="grid md:grid-cols-3 gap-8">
-                {/* Formulario de Nuevo Envío */}
                 <div className="md:col-span-1 card-glass p-6 space-y-6">
                     <h2 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Nuevo Envío</h2>
                     <form onSubmit={handleCreatePkg} className="space-y-4">
@@ -36,14 +33,14 @@ window.ControlPanel = function(props) {
                         <input required className="input-field uppercase" placeholder="DESTINO" value={pkgForm.d} onChange={e => setPkgForm({...pkgForm, d: e.target.value})} />
                         <select required className="input-field" value={pkgForm.op} onChange={e => setPkgForm({...pkgForm, op: e.target.value})}>
                             <option value="">ASIGNAR OPERADOR</option>
-                            {ops.filter(o => o.role === 'operador').map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                            {/* Ahora la clave de asignación es el correo electrónico del operador */}
+                            {ops.filter(o => o.role === 'operador').map(o => <option key={o.email} value={o.email}>{o.name}</option>)}
                         </select>
                         <button type="submit" className="w-full btn-primary h-12">Crear Guía</button>
                     </form>
                 </div>
                 
                 <div className="md:col-span-2 space-y-8">
-                    {/* Tabla de Envíos Activos */}
                     <div className="card-glass overflow-hidden">
                         <div className="bg-slate-50 border-b border-slate-100 px-6 py-4">
                             <h2 className="text-[10px] font-black uppercase tracking-widest text-slate-400">Envíos Activos</h2>
@@ -66,12 +63,12 @@ window.ControlPanel = function(props) {
                         </table>
                     </div>
 
-                    {/* Componente Extraído de Usuarios/Operadores */}
+                    {/* Llamada al panel de operadores conectada a la autenticación segura */}
                     {window.OperatorsPanel && (
                         <window.OperatorsPanel 
                             ops={ops} 
                             onDeleteOp={deleteOp} 
-                            onAddOp={(newOp) => saveDoc('operators', newOp.id, newOp)} 
+                            onAddOp={handleAddOp} 
                             Icons={Icons} 
                         />
                     )}
